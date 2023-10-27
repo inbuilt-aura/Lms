@@ -28,7 +28,7 @@ const userSchema: Schema<IUser> = new mongoose.Schema(
   {
     username: {
       type: String,
-      reuired: [true, "Please enter your username"],
+      required: [true, "Please enter your username"],
     },
     email: {
       type: String,
@@ -44,8 +44,9 @@ const userSchema: Schema<IUser> = new mongoose.Schema(
     password: {
       type: String,
       require: [true, "Please enter your password"],
-      minLength: [8, "Password must be min. 8 characters long"],
+      minlength: [8, "Password must be min. 8 characters long"],
       select: false,
+       unique: true,
     },
     avatar: {
       public_id: String,
@@ -54,6 +55,7 @@ const userSchema: Schema<IUser> = new mongoose.Schema(
     role: {
       type: String,
       default: "user",
+
     },
     isVerified: {
       type: Boolean,

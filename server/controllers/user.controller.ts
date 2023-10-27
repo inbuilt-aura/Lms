@@ -131,7 +131,7 @@ export const activateUser = catchAsyncError(
 
 // login user
 
-interface ILoginAccess {
+interface ILoginRequest {
   email: string;
   password: string;
 
@@ -139,11 +139,11 @@ interface ILoginAccess {
 
  export const loginUser= catchAsyncError(async(req:Request, res:Response, next:NextFunction) => {
 try {
-  const {email, password} = req.body as ILoginAccess;
+  const {email, password} = req.body as ILoginRequest;
   if(!email ||  !password){
     return next(new ErrorHandler("Please enter email and password", 400));
   };
-  const user= await userModel.findOne({ email}).select("password");
+  const user= await userModel.findOne({ email}).select("+password");
 
   if(!user){
     return next(new ErrorHandler("Invalid email or password", 400));

@@ -4,7 +4,7 @@ import { IUser } from "../models/user.model";
 import { redis } from "./redis";
 
 interface ITokenOptions {
-  expiresIn: Date;
+  expires: Date;
   maxAge: number;
   httpOnly: boolean;
   sameSite: "lax" | "strict" | "none" | undefined;
@@ -31,13 +31,13 @@ export const sendToken = (user: IUser, statusCode: number, res: Response) => {
   // options for cookies
 
   const accessTokenOptions: ITokenOptions = {
-    expiresIn: new Date(Date.now() + accessTokenExpire + 1000),
+    expires: new Date(Date.now() + accessTokenExpire + 1000),
     maxAge: accessTokenExpire + 1000,
     httpOnly: true,
     sameSite: "lax",
   };
   const refreshTokenOptions: ITokenOptions = {
-    expiresIn: new Date(Date.now() + refreshTokenExpire + 1000),
+    expires: new Date(Date.now() + refreshTokenExpire + 1000),
     maxAge: refreshTokenExpire + 1000,
     httpOnly: true,
     sameSite: "lax",
