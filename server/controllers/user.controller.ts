@@ -9,6 +9,9 @@ import path from "path";
 import sendMail from "../utils/sendMail";
 import {sendToken} from "../utils/jwt";
 import { redis } from "../utils/redis";
+import express from "express";
+import mongoose from "mongoose";
+import bcryptjs from 'bcryptjs';
 // register user
 
 interface IRegistration {
@@ -70,8 +73,13 @@ interface IActivationToken {
 }
 
 export const createActivationToken = (user: any): IActivationToken => {
-  const activationCode = Math.floor(1000 + Math.random() + 9000).toString();
+  // const  = Math.floor(1000 + Math.random() + 9000).toString();
+  const randomNumber = Math.random();
 
+  // Multiply the random number by 9000 and add 1000 to get a number between 1000 and 9999
+  const activationCode = Math.floor((randomNumber * 900000) + 100000).toString();
+
+  
   const token = jwt.sign(
     {
       user,
@@ -180,3 +188,92 @@ try {
 }
   }
  );
+
+ // Delete user
+
+ const router = express.Router();
+
+ // Define a function to delete a user from the database
+ export const deleteUser = catchAsyncError(async (req:Request, res:Response, next:NextFunction) => {
+   
+   const userId = req.user?._id || "";
+   
+   // Find and delete the user from the database
+   const user = await mongoose.model('User').findByIdAndDelete(userId);
+   
+   // Check if the user was found and deleted
+   if (!user) {
+     return res.status(404).json({ message: 'User not found' });
+    }
+    
+    try {
+      res.cookie("access_token", "", {maxAge:1});
+      res.cookie("refresh_token", "", {maxAge:1});
+       
+      // delete data from redis database
+    redis.del(userId);
+    res.status(200).json({
+      suceess:true,
+      message:"User successfully deleted",
+    });
+  
+  } catch (error:any) {
+    return next(new ErrorHandler(error.message, 400));
+  }
+    }
+   );
+
+    // update user profile
+
+  // Define a function to hash the password
+const hashPassword = async (password: string) => {
+  // Generate a salt
+  const salt = await bcryptjs.genSalt(12);
+
+  // Hash the password with the salt
+  const hashedPassword = await bcryptjs.hash(password, salt);
+
+  // Return the hashed password
+  return hashedPassword;
+};
+// Define a function to update a user's profile
+export const updateUserProfile = catchAsyncError(async (req:Request, res:Response, next:NextFunction) => {
+  
+  // Get the user id from the request header
+  const userId = req.user?._id || "";
+  // Get the update data from the request body
+  const updateData = req.body;
+
+  if (updateData.password) {
+    // Hash the password
+    updateData.password = await hashPassword(updateData.password);
+  }
+
+  
+  // Find and update the user in the database
+  const user = await mongoose.model('User').findByIdAndUpdate(userId, updateData, {
+    new: true, // Return the updated user
+    runValidators: true, // Validate the update data using the user schema
+  });
+
+  // Check if the user was found and updated
+  if (!user) {
+    return res.status(404).json({ message: 'User not found' });
+  }
+  try {
+    res.cookie("access_token", "", {maxAge:1});
+    res.cookie("refresh_token", "", {maxAge:1});
+     
+    // delete data from redis database
+    redis.set(userId, user);
+  res.status(200).json({
+    suceess:true,
+    message:"User successfully updated",
+  });
+
+} catch (error:any) {
+  return next(new ErrorHandler(error.message, 400));
+}
+  }
+ );
+  
