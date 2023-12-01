@@ -3,15 +3,16 @@ import { NextFunction, Request, Response } from "express";
 import userModel, { IUser } from "../models/user.model";
 import ErrorHandler from "../utils/ErrorHandler";
 import { catchAsyncError } from "../middleware/catchAsyncError";
-import jwt, { Secret } from "jsonwebtoken";
+import jwt, { JwtPayload, Secret } from "jsonwebtoken";
 import ejs from "ejs";
 import path from "path";
 import sendMail from "../utils/sendMail";
-import {sendToken} from "../utils/jwt";
+import {accessTokenOptions, refreshTokenOptions, sendToken} from "../utils/jwt";
 import { redis } from "../utils/redis";
 import express from "express";
 import mongoose from "mongoose";
 import bcryptjs from 'bcryptjs';
+import crypto from 'crypto';
 // register user
 
 interface IRegistration {
@@ -277,3 +278,112 @@ export const updateUserProfile = catchAsyncError(async (req:Request, res:Respons
   }
  );
   
+
+ //  reset password request
+export const resetPasswordRequest = catchAsyncError(async (req:Request, res:Response, next:NextFunction) => {
+  const { email } = req.body;
+  const user = await mongoose.model('User').findOne({ email });
+  if (!user) {
+    return res.status(404).json({ message: 'User not found' });
+  }
+  // Generate a reset token
+  const generateToken = crypto.randomBytes(32).toString('hex');
+  if(!generateToken){
+    return next(new ErrorHandler("Token not generated", 400));
+  }
+  user.resetToken = generateToken;
+  user.expireToken = Date.now() + 1800000;
+  await user.save();
+  const resetLink = `${process.env.BASE_URL}/resetpassword/${user.id}/${generateToken}`;
+  const data = { user: { username: user.username }, resetLink };
+  const html = await ejs.renderFile(
+    path.join(__dirname, "../mails/resetPassword.ejs"),
+    data
+  );
+  try {
+    await sendMail({
+      email: user.email,
+      subject: "Reset your password",
+      template: "resetPassword.ejs",
+      data,
+    });
+    res.status(200).json({
+      suceess:true,
+      message:"Please check your email to reset your password",
+    });
+  } catch (error: any) {
+    return next(new ErrorHandler(error.message, 400));
+  }
+})
+
+export const resetPassword = catchAsyncError(async (req:Request, res:Response, next:NextFunction) => {
+  const { userId, token } = req.params;
+  const { password } = req.body;
+  const user = await mongoose.model('User').findById(userId);
+  if (!user) {
+    return res.status(404).json({ message: 'User not found' });
+  }
+  if (user.resetToken !== token) {
+    return res.status(400).json({ message: 'Invalid token' });
+  }
+  if (user.expireToken < Date.now()) {
+    return res.status(400).json({ message: 'Token expired' });
+  }
+  user.password = password;
+  user.resetToken = undefined;
+  user.expireToken = undefined;
+  await user.save();
+  res.status(200).json({
+    suceess:true,
+    message:"Password successfully reset",
+  });
+})
+
+// validate user role
+
+export const validateRoles = (...roles: string[]) =>{
+  return (req: Request,res: Response,next: NextFunction) =>{
+if(!roles.includes(req.user?.role || '')){
+  return next(new ErrorHandler (`Role: ${req.user?.role} is not allowed to access this resource.`, 403));
+  }
+  next();
+}
+}
+
+// update access_token
+
+export const updateAccessToken = (async(req: Request, res: Response,next: NextFunction) => {
+  try {
+    const refresh_token = req.cookies.refresh_token as string;
+    const decoded= jwt.verify(refresh_token, process.env.REFRESH_TOKEN as string) as JwtPayload;
+
+    const message= "Couldn't access refresh token";;
+    if(!decoded){
+      return next(new ErrorHandler (message, 400));
+    }
+    const session= await redis.get(decoded._id as string);
+
+    if(!session){
+      return next(new ErrorHandler (message,400));
+    }
+const user= JSON.parse(session);
+
+const accessToken = jwt.sign({id:user._id}, process.env.ACCESS_TOKEN as string, {
+  expiresIn: '5m',
+});
+  
+const refreshToken = jwt.sign({id:user._id}, process.env.REFRESH_TOKEN as string, {
+  expiresIn: '5d',
+});
+res.cookie("access_token", accessToken, accessTokenOptions);
+res.cookie("refresh_token", refreshToken, refreshTokenOptions);
+
+res.status(200).json({
+  status:'success',
+  accessToken,
+})
+
+  } catch (error:any) {
+   return next(new ErrorHandler (error.message, 400)); 
+  }
+})
